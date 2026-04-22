@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().default("::"),
 
   DATA_DIR: z.string().default("./data"),
   SQLITE_FILE: z.string().default("mediamonitor.sqlite"),

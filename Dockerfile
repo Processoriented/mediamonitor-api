@@ -4,8 +4,9 @@ WORKDIR /app
 
 RUN apk add --no-cache libc6-compat python3 make g++
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package*.json ./
+# Use npm install to avoid requiring a lockfile in early scaffolding.
+RUN npm install
 
 COPY tsconfig.json ./
 COPY src ./src

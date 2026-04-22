@@ -32,3 +32,5 @@ docker compose up --build
 
 The container publishes `8787` on the host (LAN-wide). If you run a firewall (e.g. `ufw`), allow inbound TCP `8787`.
 
+By default the server binds to `HOST=::` (IPv6 any). If you prefer IPv4-only, set `HOST=0.0.0.0`.
+
