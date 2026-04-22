@@ -6,7 +6,7 @@ import { runMigrations } from "./db/migrate.js";
 import { openDb } from "./db/db.js";
 import { appendEvent, getTimeline, getWorkItem, listWorkItems, upsertWorkItem } from "./db/repos/workItemsRepo.js";
 import { registerWebhooks } from "./ingest/webhooks.js";
-import { startPollLoop } from "./ingest/pollers.js";
+import { runAllPollersOnce, startPollLoop } from "./ingest/pollers.js";
 
 const cfg = loadConfig();
 const logger = createLogger();
@@ -37,8 +37,7 @@ app.get("/integrations", async () => {
 });
 
 app.post("/admin/sync", async () => {
-  // Minimal hook point; for now it just indicates the server is alive.
-  // Next iteration will run pollers immediately.
+  await runAllPollersOnce(db);
   return { ok: true };
 });
 

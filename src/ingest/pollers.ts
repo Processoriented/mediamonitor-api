@@ -1,7 +1,11 @@
 import type { Db } from "../db/db.js";
 import { loadConfig } from "../config.js";
-import { markIntegrationError, markIntegrationOk } from "../db/repos/integrationsRepo.js";
+import { markIntegrationError } from "../db/repos/integrationsRepo.js";
 import { arrPing } from "../integrations/arr.js";
+import { pollRadarrQueue, pollSonarrQueue } from "./pollers/arrPollers.js";
+import { pollSabnzbd } from "./pollers/sabnzbdPoller.js";
+import { pollTautulli } from "./pollers/tautulliPoller.js";
+import { pollSeerr } from "./pollers/seerrPoller.js";
 
 export type Poller = {
   name: string;
@@ -13,13 +17,10 @@ export function createPollers(db: Db): Poller[] {
 
   const pollers: Poller[] = [];
 
-  // Stubs for now: we mark integrations as OK if configured,
-  // otherwise we leave them absent. Next iteration will fetch real data.
   pollers.push({
     name: "seerr",
     runOnce: async () => {
-      if (!cfg.SEERR_BASE_URL || !cfg.SEERR_API_KEY) return;
-      markIntegrationOk(db, "seerr");
+      await pollSeerr(db, cfg);
     }
   });
   pollers.push({
@@ -27,7 +28,7 @@ export function createPollers(db: Db): Poller[] {
     runOnce: async () => {
       if (!cfg.SONARR_BASE_URL || !cfg.SONARR_API_KEY) return;
       await arrPing({ baseUrl: cfg.SONARR_BASE_URL, apiKey: cfg.SONARR_API_KEY });
-      markIntegrationOk(db, "sonarr");
+      await pollSonarrQueue(db, cfg);
     }
   });
   pollers.push({
@@ -35,21 +36,19 @@ export function createPollers(db: Db): Poller[] {
     runOnce: async () => {
       if (!cfg.RADARR_BASE_URL || !cfg.RADARR_API_KEY) return;
       await arrPing({ baseUrl: cfg.RADARR_BASE_URL, apiKey: cfg.RADARR_API_KEY });
-      markIntegrationOk(db, "radarr");
+      await pollRadarrQueue(db, cfg);
     }
   });
   pollers.push({
     name: "sabnzbd",
     runOnce: async () => {
-      if (!cfg.SABNZBD_BASE_URL || !cfg.SABNZBD_API_KEY) return;
-      markIntegrationOk(db, "sabnzbd");
+      await pollSabnzbd(db, cfg);
     }
   });
   pollers.push({
     name: "tautulli",
     runOnce: async () => {
-      if (!cfg.TAUTULLI_BASE_URL || !cfg.TAUTULLI_API_KEY) return;
-      markIntegrationOk(db, "tautulli");
+      await pollTautulli(db, cfg);
     }
   });
 
@@ -65,6 +64,17 @@ export function createPollers(db: Db): Poller[] {
       }
     }
   }));
+}
+
+export async function runAllPollersOnce(db: Db) {
+  const pollers = createPollers(db);
+  for (const p of pollers) {
+    try {
+      await p.runOnce();
+    } catch {
+      // Errors are recorded per-integration via markIntegrationError inside the wrapper.
+    }
+  }
 }
 
 export function startPollLoop(db: Db, opts: { logger: { info: Function; warn: Function }; intervalSeconds?: number }) {

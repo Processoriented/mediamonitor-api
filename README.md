@@ -68,6 +68,19 @@ These are read by the Node process (set them in Compose `environment:` for Docke
 - **`NODE_ENV`**: when running locally with a TTY, `NODE_ENV` not equal to `production` enables prettier logs; Docker image sets `production` by default.
 - **Admin endpoints** (`/admin/*`) are currently unauthenticated beyond LAN exposure—treat network access accordingly.
 
+### Background pollers
+
+The server periodically polls configured integrations (`POLL_INTERVAL_SECONDS`, default `30`) and appends timeline events.
+
+- **Sonarr/Radarr**: polls `/api/v3/queue` and emits `*.poll.queue` events; also pings `/api/v3/system/status` first.
+- **SABnzbd**: polls `mode=queue` and emits `sabnzbd.poll.queue` events when a job’s status changes (requires `downloadId` correlation from ARR webhooks).
+- **Seerr**: polls `GET /api/v1/status` with `X-Api-Key`.
+- **Tautulli**: polls `cmd=server_info`.
+
+You can also trigger a poll cycle immediately:
+
+- `POST /admin/sync`
+
 ## Webhook secret (recommended)
 
 Don’t commit secrets into the repo. Docker Compose will automatically load a local `.env` file (which is gitignored here).

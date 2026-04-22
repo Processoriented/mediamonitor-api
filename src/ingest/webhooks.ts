@@ -50,6 +50,11 @@ function upsertSeerrMediaCorrelation(db: Db, args: { mediaType: string; tmdbId?:
   }
 }
 
+function registerSabnzbdDownloadMapping(db: Db, downloadId: string | undefined, workItemId: string) {
+  if (!downloadId) return;
+  upsertExternalId(db, { source: "sabnzbd", externalType: "download_id", externalId: downloadId, workItemId });
+}
+
 export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { secret?: string }) {
   const auth = requireWebhookSecret(opts.secret);
 
@@ -91,6 +96,7 @@ export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { sec
     .object({
       eventType: z.string().optional(),
       instanceName: z.string().optional(),
+      downloadId: z.string().optional(),
       movie: z
         .object({
           id: z.number().int(),
@@ -115,6 +121,7 @@ export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { sec
     .object({
       eventType: z.string().optional(),
       instanceName: z.string().optional(),
+      downloadId: z.string().optional(),
       series: z
         .object({
           id: z.number().int(),
@@ -275,6 +282,8 @@ export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { sec
         message: "Received Sonarr webhook",
         data: body
       });
+
+      registerSabnzbdDownloadMapping(db, body.downloadId, workItemId);
     }
     return { ok: true, workItemIds };
   });
@@ -308,6 +317,8 @@ export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { sec
       message: "Received Radarr webhook",
       data: body
     });
+
+    registerSabnzbdDownloadMapping(db, body.downloadId, workItemId);
 
     const tmdb =
       body.movie?.tmdbId ??
