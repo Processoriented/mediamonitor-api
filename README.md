@@ -75,7 +75,9 @@ The server periodically polls configured integrations (`POLL_INTERVAL_SECONDS`, 
 - **Sonarr/Radarr**: polls `/api/v3/queue` and emits `*.poll.queue` events; also pings `/api/v3/system/status` first.
 - **SABnzbd**: polls `mode=queue` and emits `sabnzbd.poll.queue` events when a job’s status changes (requires `downloadId` correlation from ARR webhooks).
 - **Seerr**: polls `GET /api/v1/status` with `X-Api-Key`.
-- **Tautulli**: polls `cmd=server_info`.
+- **Tautulli**: polls `cmd=get_server_info`.
+
+`TAUTULLI_BASE_URL` should be the **web UI root** (scheme + host + port), e.g. `http://yourhost:8181` (optionally with a reverse-proxy subpath like `http://yourhost/tautulli`). The client will call `/api/v2` under that root.
 
 You can also trigger a poll cycle immediately:
 
