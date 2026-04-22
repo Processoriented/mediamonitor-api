@@ -1,0 +1,7 @@
+services:
+  mediamonitor-api:
+    volumes:
+      # Optional host signals (read-only). Customize these paths for your host.
+      - ${SABNZBD_PULL_LOG_PATH:-/path/to/sabnzbd_pull.log}:/host/logs/sabnzbd_pull.log:ro
+      - ${SABNZBD_PULL_STATE_PATH:-/path/to/sabnzbd_pull_state.json}:/host/state/sabnzbd_pull_state.json:ro
+

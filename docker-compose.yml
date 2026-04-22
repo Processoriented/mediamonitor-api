@@ -1,21 +1,28 @@
 services:
   mediamonitor-api:
     build: .
-    container_name: mediamonitor-api
     ports:
-      - "8787:8787"
+      - "${API_PORT:-8787}:8787"
     environment:
-      HOST: "::"
+      HOST: "${HOST:-::}"
       PORT: "8787"
       DATA_DIR: "/data"
-      SQLITE_FILE: "mediamonitor.sqlite"
-      LOG_LEVEL: "info"
+      SQLITE_FILE: "${SQLITE_FILE:-mediamonitor.sqlite}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
       WEBHOOK_SECRET: "${WEBHOOK_SECRET}"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-30}"
+      SEERR_BASE_URL: "${SEERR_BASE_URL-}"
+      SEERR_API_KEY: "${SEERR_API_KEY-}"
+      SONARR_BASE_URL: "${SONARR_BASE_URL-}"
+      SONARR_API_KEY: "${SONARR_API_KEY-}"
+      RADARR_BASE_URL: "${RADARR_BASE_URL-}"
+      RADARR_API_KEY: "${RADARR_API_KEY-}"
+      SABNZBD_BASE_URL: "${SABNZBD_BASE_URL-}"
+      SABNZBD_API_KEY: "${SABNZBD_API_KEY-}"
+      TAUTULLI_BASE_URL: "${TAUTULLI_BASE_URL-}"
+      TAUTULLI_API_KEY: "${TAUTULLI_API_KEY-}"
     volumes:
       - mediamonitor_data:/data
-      # Host signals (read-only)
-      - /home/agent_zero/logs/sabnzbd_pull.log:/host/logs/sabnzbd_pull.log:ro
-      - /home/agent_zero/.config/sabnzbd_pull_state.json:/host/state/sabnzbd_pull_state.json:ro
 
 volumes:
   mediamonitor_data:
