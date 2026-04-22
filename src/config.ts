@@ -9,6 +9,8 @@ const envSchema = z.object({
 
   LOG_LEVEL: z.string().default("info"),
 
+  WEBHOOK_SECRET: z.string().optional(),
+
   // Integrations (placeholders; add as we implement clients)
   SEERR_BASE_URL: z.string().optional(),
   SEERR_API_KEY: z.string().optional(),
@@ -23,7 +25,9 @@ const envSchema = z.object({
   SABNZBD_API_KEY: z.string().optional(),
 
   TAUTULLI_BASE_URL: z.string().optional(),
-  TAUTULLI_API_KEY: z.string().optional()
+  TAUTULLI_API_KEY: z.string().optional(),
+
+  POLL_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(30)
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

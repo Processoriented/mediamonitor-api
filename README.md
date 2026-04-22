@@ -34,3 +34,23 @@ The container publishes `8787` on the host (LAN-wide). If you run a firewall (e.
 
 By default the server binds to `HOST=::` (IPv6 any). If you prefer IPv4-only, set `HOST=0.0.0.0`.
 
+## Webhook secret (recommended)
+
+Don’t commit secrets into the repo. Docker Compose will automatically load a local `.env` file (which is gitignored here).
+
+1) Create `mediamonitor-api/.env`:
+
+```bash
+WEBHOOK_SECRET="put-a-long-random-string-here"
+```
+
+2) Restart:
+
+```bash
+docker compose up -d --build
+```
+
+3) Configure Sonarr/Radarr/Seerr to send header:
+
+`x-webhook-secret: <same value>`
+

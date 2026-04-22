@@ -10,6 +10,7 @@ services:
       DATA_DIR: "/data"
       SQLITE_FILE: "mediamonitor.sqlite"
       LOG_LEVEL: "info"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET}"
     volumes:
       - mediamonitor_data:/data
       # Host signals (read-only)

@@ -5,6 +5,8 @@ import { loadConfig } from "./config.js";
 import { runMigrations } from "./db/migrate.js";
 import { openDb } from "./db/db.js";
 import { appendEvent, getTimeline, getWorkItem, listWorkItems, upsertWorkItem } from "./db/repos/workItemsRepo.js";
+import { registerWebhooks } from "./ingest/webhooks.js";
+import { startPollLoop } from "./ingest/pollers.js";
 
 const cfg = loadConfig();
 const logger = createLogger();
@@ -32,6 +34,12 @@ app.get("/healthz", async () => {
 app.get("/integrations", async () => {
   const rows = db.prepare("select * from integration_sync_state order by integration asc").all();
   return { integrations: rows };
+});
+
+app.post("/admin/sync", async () => {
+  // Minimal hook point; for now it just indicates the server is alive.
+  // Next iteration will run pollers immediately.
+  return { ok: true };
 });
 
 app.get("/work-items", async (req) => {
@@ -108,6 +116,10 @@ app.post("/admin/seed", async (req) => {
 
   return { ok: true };
 });
+
+await registerWebhooks(app, db, { secret: cfg.WEBHOOK_SECRET });
+
+startPollLoop(db, { logger: app.log, intervalSeconds: cfg.POLL_INTERVAL_SECONDS });
 
 await app.listen({ host: cfg.HOST, port: cfg.PORT });
 
