@@ -54,3 +54,27 @@ docker compose up -d --build
 
 `x-webhook-secret: <same value>`
 
+If a webhook sender can’t add custom headers (some Seerr builds are limited here), use a query param instead:
+
+`http://olympia.local:8787/webhooks/seerr?secret=<same value>`
+
+## Cleanup old uncorrelated items
+
+If you have legacy `seerr:*` work-items created before correlation was enabled (or from test notifications), you can prune them.
+
+- Dry-run (recommended first):
+
+```bash
+curl -X POST http://olympia.local:8787/admin/prune \
+  -H 'content-type: application/json' \
+  -d '{"idPrefix":"seerr:","olderThanDays":1,"dryRun":true,"onlyUncorrelated":true}'
+```
+
+- Execute deletion:
+
+```bash
+curl -X POST http://olympia.local:8787/admin/prune \
+  -H 'content-type: application/json' \
+  -d '{"idPrefix":"seerr:","olderThanDays":1,"dryRun":false,"onlyUncorrelated":true}'
+```
+

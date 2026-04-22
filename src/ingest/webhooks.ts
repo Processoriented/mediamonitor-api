@@ -2,15 +2,17 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/db.js";
 import { randomUUID } from "node:crypto";
-import { appendEvent, upsertWorkItem } from "../db/repos/workItemsRepo.js";
+import { appendEvent, getWorkItem, upsertWorkItem } from "../db/repos/workItemsRepo.js";
 import type { Stage } from "../domain/types.js";
 import { findWorkItemIdByExternalId, upsertExternalId } from "../db/repos/externalIdsRepo.js";
 
 function requireWebhookSecret(secret?: string) {
   return async (req: any, reply: any) => {
     if (!secret) return;
-    const got = req.headers["x-webhook-secret"];
-    if (got !== secret) {
+    const gotHeader = req.headers["x-webhook-secret"];
+    const gotQuery = typeof req.query?.secret === "string" ? req.query.secret : undefined;
+    // Some webhook senders can't add custom headers; support a query param fallback.
+    if (gotHeader !== secret && gotQuery !== secret) {
       return reply.code(401).send({ error: "unauthorized" });
     }
   };
@@ -185,18 +187,21 @@ export async function registerWebhooks(app: FastifyInstance, db: Db, opts: { sec
 
     const type: "movie" | "episode" = mediaType === "movie" ? "movie" : "episode";
 
+    const existing = getWorkItem(db, workItemId);
+    const correlatedToArr = workItemId.startsWith("radarr:") || workItemId.startsWith("sonarr:");
+    // If we correlated to an existing ARR work item, do not overwrite its metadata.
     upsertWorkItem(db, {
       id: workItemId,
-      type,
-      title: body.subject ?? null,
-      year: null,
-      season: null,
-      episode: null,
-      stage: "requested",
-      health: "ok",
-      stalled_since: null,
-      stall_reason: null,
-      expected_next_event: "arr.grabbed"
+      type: (existing?.type as any) ?? type,
+      title: correlatedToArr ? existing?.title ?? null : existing?.title ?? body.subject ?? null,
+      year: correlatedToArr ? existing?.year ?? null : existing?.year ?? null,
+      season: existing?.season ?? null,
+      episode: existing?.episode ?? null,
+      stage: existing?.stage ?? "requested",
+      health: existing?.health ?? "ok",
+      stalled_since: existing?.stalled_since ?? null,
+      stall_reason: existing?.stall_reason ?? null,
+      expected_next_event: existing?.expected_next_event ?? "arr.grabbed"
     });
 
     if (requestId) upsertSeerrRequestCorrelation(db, requestId, workItemId);

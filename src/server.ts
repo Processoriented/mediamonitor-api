@@ -42,6 +42,59 @@ app.post("/admin/sync", async () => {
   return { ok: true };
 });
 
+app.post("/admin/prune", async (req) => {
+  const body = z
+    .object({
+      idPrefix: z.string().default("seerr:"),
+      olderThanDays: z.number().int().min(0).default(7),
+      dryRun: z.boolean().default(true),
+      onlyUncorrelated: z.boolean().default(true),
+      limit: z.number().int().min(1).max(5000).default(500)
+    })
+    .parse(req.body ?? {});
+
+  const cutoff = new Date(Date.now() - body.olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const rows = db
+    .prepare(
+      `
+      select wi.id
+      from work_items wi
+      where wi.id like @prefix
+        and wi.updated_at < @cutoff
+        and (
+          @onlyUncorrelated = 0
+          or not exists (select 1 from external_ids ei where ei.work_item_id = wi.id)
+        )
+      order by wi.updated_at asc
+      limit @limit
+    `
+    )
+    .all({
+      prefix: `${body.idPrefix}%`,
+      cutoff,
+      onlyUncorrelated: body.onlyUncorrelated ? 1 : 0,
+      limit: body.limit
+    }) as Array<{ id: string }>;
+
+  const ids = rows.map((r) => r.id);
+  if (!body.dryRun && ids.length) {
+    const del = db.prepare("delete from work_items where id = ?");
+    db.transaction(() => {
+      for (const id of ids) del.run(id);
+    })();
+  }
+
+  return {
+    ok: true,
+    dryRun: body.dryRun,
+    cutoff,
+    matched: ids.length,
+    deleted: body.dryRun ? 0 : ids.length,
+    ids
+  };
+});
+
 app.get("/work-items", async (req) => {
   const querySchema = z.object({
     stage: z.string().optional(),
