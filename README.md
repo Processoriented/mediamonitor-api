@@ -1,6 +1,6 @@
 # MediaMonitor API
 
-Local-only REST API to track media requests through Seerr → ARR → SABnzbd (argus) → pull script → import → Plex.
+LAN-accessible REST API to track media requests through Seerr → ARR → SABnzbd (argus) → pull script → import → Plex.
 
 ## Dev (on host)
 
@@ -12,13 +12,13 @@ npm run dev
 ```
 
 Then:
-- `GET http://127.0.0.1:8787/healthz`
-- `POST http://127.0.0.1:8787/admin/seed`
+- `GET http://<olympia-ip>:8787/healthz`
+- `POST http://<olympia-ip>:8787/admin/seed`
 
 Example seed:
 
 ```bash
-curl -X POST http://127.0.0.1:8787/admin/seed \
+curl -X POST http://<olympia-ip>:8787/admin/seed \
   -H 'content-type: application/json' \
   -d '{"id":"demo-movie-1","type":"movie","title":"Example Movie","year":2026}'
 ```
@@ -30,5 +30,5 @@ cd /home/vincent/Projects/MediaMonitor/mediamonitor-api
 docker compose up --build
 ```
 
-The container binds to `127.0.0.1:8787` on the host.
+The container publishes `8787` on the host (LAN-wide). If you run a firewall (e.g. `ufw`), allow inbound TCP `8787`.
 

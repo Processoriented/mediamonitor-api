@@ -1,0 +1,21 @@
+services:
+  mediamonitor-api:
+    build: .
+    container_name: mediamonitor-api
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      DATA_DIR: "/data"
+      SQLITE_FILE: "mediamonitor.sqlite"
+      LOG_LEVEL: "info"
+    volumes:
+      - mediamonitor_data:/data
+      # Host signals (read-only)
+      - /home/agent_zero/logs/sabnzbd_pull.log:/host/logs/sabnzbd_pull.log:ro
+      - /home/agent_zero/.config/sabnzbd_pull_state.json:/host/state/sabnzbd_pull_state.json:ro
+
+volumes:
+  mediamonitor_data:
+
