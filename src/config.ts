@@ -27,6 +27,10 @@ const envSchema = z.object({
   TAUTULLI_BASE_URL: z.string().optional(),
   TAUTULLI_API_KEY: z.string().optional(),
 
+  // Pull-script host signal mounts (inside container)
+  SABNZBD_PULL_LOG_INGEST_PATH: z.string().default("/host/logs/sabnzbd_pull.log"),
+  SABNZBD_PULL_STATE_INGEST_PATH: z.string().default("/host/state/sabnzbd_pull_state.json"),
+
   POLL_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(30)
 });
 

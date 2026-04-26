@@ -6,6 +6,7 @@ import { pollRadarrQueue, pollSonarrQueue } from "./pollers/arrPollers.js";
 import { pollSabnzbd } from "./pollers/sabnzbdPoller.js";
 import { pollTautulli } from "./pollers/tautulliPoller.js";
 import { pollSeerr } from "./pollers/seerrPoller.js";
+import { pollPullScript } from "./pollers/pullScriptPoller.js";
 
 export type Poller = {
   name: string;
@@ -43,6 +44,12 @@ export function createPollers(db: Db): Poller[] {
     name: "sabnzbd",
     runOnce: async () => {
       await pollSabnzbd(db, cfg);
+    }
+  });
+  pollers.push({
+    name: "pullscript",
+    runOnce: async () => {
+      await pollPullScript(db, cfg);
     }
   });
   pollers.push({
