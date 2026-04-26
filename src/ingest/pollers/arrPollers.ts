@@ -4,6 +4,7 @@ import { arrHistory, arrQueue } from "../../integrations/arrClient.js";
 import { appendEvent, getWorkItem, upsertWorkItem } from "../../db/repos/workItemsRepo.js";
 import { markIntegrationOk } from "../../db/repos/integrationsRepo.js";
 import type { Stage } from "../../domain/types.js";
+import { getPollState, setPollState } from "../../db/repos/pollStateRepo.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -36,6 +37,44 @@ function upsertStage(db: Db, workItemId: string, nextStage: Stage) {
     stall_reason: existing.stall_reason,
     expected_next_event: existing.expected_next_event
   });
+}
+
+function setHealthFailed(db: Db, workItemId: string, reason: string) {
+  const existing = getWorkItem(db, workItemId);
+  if (!existing) return;
+  upsertWorkItem(db, {
+    id: workItemId,
+    type: existing.type,
+    title: existing.title,
+    year: existing.year,
+    season: existing.season,
+    episode: existing.episode,
+    stage: existing.stage,
+    health: "failed",
+    stalled_since: existing.stalled_since,
+    stall_reason: reason,
+    expected_next_event: existing.expected_next_event
+  });
+}
+
+function stageForHistoryEventType(eventType: string): Stage | undefined {
+  const t = eventType.toLowerCase();
+  if (t.includes("grab")) return "downloading";
+  if (t.includes("download")) return "downloading";
+  if (t.includes("import")) return "imported";
+  if (t.includes("rename")) return "imported";
+  return undefined;
+}
+
+function shouldEmitHistory(db: Db, key: string, id: number) {
+  const prev = Number(getPollState(db, key) ?? "0");
+  return !(Number.isFinite(prev) && id <= prev);
+}
+
+function bumpHistoryWatermark(db: Db, key: string, id: number) {
+  const prev = Number(getPollState(db, key) ?? "0");
+  const next = Math.max(Number.isFinite(prev) ? prev : 0, id);
+  setPollState(db, key, String(next));
 }
 
 function ensureSonarrEpisodeWorkItem(db: Db, r: any, episodeId: number) {
@@ -134,7 +173,36 @@ export async function pollSonarrQueue(db: Db, cfg: AppConfig) {
     });
   }
 
-  await arrHistory({ baseUrl: cfg.SONARR_BASE_URL, apiKey: cfg.SONARR_API_KEY });
+  const hist = await arrHistory({ baseUrl: cfg.SONARR_BASE_URL, apiKey: cfg.SONARR_API_KEY });
+  const histRecords = (hist.records ?? []) as any[];
+  const watermarkKey = "sonarr:history:last_id";
+  let maxId = 0;
+  for (const r of histRecords) {
+    const id = Number(r.id);
+    if (!Number.isFinite(id)) continue;
+    maxId = Math.max(maxId, id);
+    if (!shouldEmitHistory(db, watermarkKey, id)) continue;
+
+    const epId = r.episodeId;
+    if (!epId) continue;
+    const workItemId = ensureSonarrEpisodeWorkItem(db, r, epId);
+    const et = String(r.eventType ?? "unknown");
+    const stage = stageForHistoryEventType(et);
+    if (stage) upsertStage(db, workItemId, stage);
+
+    const lower = et.toLowerCase();
+    if (lower.includes("failed")) setHealthFailed(db, workItemId, `sonarr.history.${et}`);
+
+    appendEvent(db, workItemId, {
+      ts: nowIso(),
+      type: `sonarr.poll.history.${et}`,
+      source: "sonarr",
+      severity: lower.includes("failed") ? "error" : "info",
+      message: "Sonarr history poll",
+      data: { id, eventType: et, downloadId: r.downloadId, sourceTitle: r.sourceTitle, data: r.data }
+    });
+  }
+  if (maxId) bumpHistoryWatermark(db, watermarkKey, maxId);
   markIntegrationOk(db, "sonarr");
 }
 
@@ -164,6 +232,35 @@ export async function pollRadarrQueue(db: Db, cfg: AppConfig) {
     });
   }
 
-  await arrHistory({ baseUrl: cfg.RADARR_BASE_URL, apiKey: cfg.RADARR_API_KEY });
+  const hist = await arrHistory({ baseUrl: cfg.RADARR_BASE_URL, apiKey: cfg.RADARR_API_KEY });
+  const histRecords = (hist.records ?? []) as any[];
+  const watermarkKey = "radarr:history:last_id";
+  let maxId = 0;
+  for (const r of histRecords) {
+    const id = Number(r.id);
+    if (!Number.isFinite(id)) continue;
+    maxId = Math.max(maxId, id);
+    if (!shouldEmitHistory(db, watermarkKey, id)) continue;
+
+    const movieId = r.movieId;
+    if (!movieId) continue;
+    const workItemId = ensureRadarrMovieWorkItem(db, r, movieId);
+    const et = String(r.eventType ?? "unknown");
+    const stage = stageForHistoryEventType(et);
+    if (stage) upsertStage(db, workItemId, stage);
+
+    const lower = et.toLowerCase();
+    if (lower.includes("failed")) setHealthFailed(db, workItemId, `radarr.history.${et}`);
+
+    appendEvent(db, workItemId, {
+      ts: nowIso(),
+      type: `radarr.poll.history.${et}`,
+      source: "radarr",
+      severity: lower.includes("failed") ? "error" : "info",
+      message: "Radarr history poll",
+      data: { id, eventType: et, downloadId: r.downloadId, sourceTitle: r.sourceTitle, data: r.data }
+    });
+  }
+  if (maxId) bumpHistoryWatermark(db, watermarkKey, maxId);
   markIntegrationOk(db, "radarr");
 }
