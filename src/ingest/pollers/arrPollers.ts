@@ -20,10 +20,57 @@ function mergeStage(current: Stage | undefined, next: Stage): Stage {
   return ni > ci ? next : current;
 }
 
+function shouldClearFailedOnProgress(existing: { health: string; stall_reason: string | null; stage: Stage }, nextStage: Stage) {
+  if (existing.health !== "failed") return false;
+  const reason = existing.stall_reason ?? "";
+
+  // If ARR reported a transient download failure, but we later see progress again,
+  // treat the item as recovered (keep the failure events in the timeline).
+  const isTransientDownloadFailure = reason.includes(".history.downloadFailed");
+  if (!isTransientDownloadFailure) return false;
+
+  // Any later-stage signal indicates recovery (queue/hist/webhook signals).
+  return mergeStage(existing.stage, nextStage) !== existing.stage;
+}
+
+function clearFailedDownloadIfNeeded(db: Db, workItemId: string, because: string) {
+  const existing = getWorkItem(db, workItemId);
+  if (!existing) return;
+  if (existing.health !== "failed") return;
+  if (!(existing.stall_reason ?? "").includes(".history.downloadFailed")) return;
+
+  upsertWorkItem(db, {
+    id: existing.id,
+    type: existing.type,
+    title: existing.title,
+    year: existing.year,
+    season: existing.season,
+    episode: existing.episode,
+    stage: existing.stage,
+    health: "ok",
+    stalled_since: existing.stalled_since,
+    stall_reason: null,
+    expected_next_event: existing.expected_next_event
+  });
+
+  appendEvent(db, workItemId, {
+    ts: nowIso(),
+    type: "arr.failed_cleared",
+    source: "arr",
+    severity: "info",
+    message: "Cleared failed state after progress",
+    data: { because, previousReason: existing.stall_reason }
+  });
+}
+
 function upsertStage(db: Db, workItemId: string, nextStage: Stage) {
   const existing = getWorkItem(db, workItemId);
   if (!existing) return;
   const stage = mergeStage(existing.stage as Stage, nextStage);
+  const clearFailed = shouldClearFailedOnProgress(
+    { health: existing.health, stall_reason: existing.stall_reason, stage: existing.stage as Stage },
+    nextStage
+  );
   upsertWorkItem(db, {
     id: workItemId,
     type: existing.type,
@@ -32,9 +79,9 @@ function upsertStage(db: Db, workItemId: string, nextStage: Stage) {
     season: existing.season,
     episode: existing.episode,
     stage,
-    health: existing.health,
+    health: clearFailed ? "ok" : existing.health,
     stalled_since: existing.stalled_since,
-    stall_reason: existing.stall_reason,
+    stall_reason: clearFailed ? null : existing.stall_reason,
     expected_next_event: existing.expected_next_event
   });
 }
@@ -156,6 +203,8 @@ export async function pollSonarrQueue(db: Db, cfg: AppConfig) {
     const epId = r.episodeId ?? r.episode?.id;
     if (!epId) continue;
     const workItemId = ensureSonarrEpisodeWorkItem(db, r, epId);
+    // Queue activity after a downloadFailed indicates a later retry is in flight / succeeded.
+    clearFailedDownloadIfNeeded(db, workItemId, `sonarr.queue:${String(r.trackedDownloadState ?? r.status ?? "")}`);
     upsertStage(db, workItemId, "downloading");
     appendEvent(db, workItemId, {
       ts: nowIso(),
@@ -191,6 +240,7 @@ export async function pollSonarrQueue(db: Db, cfg: AppConfig) {
     if (stage) upsertStage(db, workItemId, stage);
 
     const lower = et.toLowerCase();
+    if (lower.includes("grab")) clearFailedDownloadIfNeeded(db, workItemId, `sonarr.history.${et}`);
     if (lower.includes("failed")) setHealthFailed(db, workItemId, `sonarr.history.${et}`);
 
     appendEvent(db, workItemId, {
