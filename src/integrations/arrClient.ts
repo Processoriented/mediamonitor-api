@@ -20,7 +20,10 @@ export async function arrQueue(args: { baseUrl: string; apiKey: string }) {
 }
 
 export async function arrHistory(args: { baseUrl: string; apiKey: string }) {
-  return jsonRequest<ArrHistoryRecord>(arrUrl(args.baseUrl, "/api/v3/history?page=1&pageSize=10&sortKey=date&sortDirection=descending"), {
-    headers: { "x-api-key": args.apiKey }
-  });
+  return jsonRequest<ArrHistoryRecord>(
+    arrUrl(args.baseUrl, "/api/v3/history?page=1&pageSize=200&sortKey=date&sortDirection=descending"),
+    {
+      headers: { "x-api-key": args.apiKey }
+    }
+  );
 }

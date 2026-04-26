@@ -20,6 +20,12 @@ function mergeStage(current: Stage | undefined, next: Stage): Stage {
   return ni > ci ? next : current;
 }
 
+function stageOrderIndex(stage: Stage): number {
+  const order: Stage[] = ["requested", "searching", "downloading", "pulling", "importing", "imported", "plex_scanning", "available"];
+  const idx = order.indexOf(stage);
+  return idx === -1 ? -1 : idx;
+}
+
 function shouldClearFailedOnProgress(existing: { health: string; stall_reason: string | null; stage: Stage }, nextStage: Stage) {
   if (existing.health !== "failed") return false;
   const reason = existing.stall_reason ?? "";
@@ -106,11 +112,97 @@ function setHealthFailed(db: Db, workItemId: string, reason: string) {
 
 function stageForHistoryEventType(eventType: string): Stage | undefined {
   const t = eventType.toLowerCase();
-  if (t.includes("grab")) return "downloading";
-  if (t.includes("download")) return "downloading";
+  // Import/rename events often contain the substring "download" (e.g. `downloadFolderImported`).
+  // Evaluate those first so we never regress `stage` back to `downloading` after an import.
   if (t.includes("import")) return "imported";
   if (t.includes("rename")) return "imported";
+  if (t.includes("grab")) return "downloading";
+  // Actual download lifecycle events (avoid matching `*Imported` / `*import*` above).
+  if (t === "downloaded" || t.endsWith("downloadfailed") || t.includes("downloadfailed")) return "downloading";
+  if (t.includes("download") && !t.includes("import")) return "downloading";
   return undefined;
+}
+
+function repairStagesFromSonarrHistoryWindow(db: Db, histRecords: any[]) {
+  type Agg = { bestImportId: number; bestImportStage?: Stage; bestAnyId: number; bestAnyStage?: Stage };
+  const byEpisode = new Map<number, Agg>();
+
+  for (const r of histRecords) {
+    const id = Number(r.id);
+    if (!Number.isFinite(id)) continue;
+    const epId = r.episodeId;
+    if (!epId) continue;
+
+    const et = String(r.eventType ?? "unknown");
+    const stage = stageForHistoryEventType(et);
+    if (!stage) continue;
+
+    const lower = et.toLowerCase();
+    const isImportish = lower.includes("import") || lower.includes("rename");
+
+    const cur = byEpisode.get(epId) ?? { bestImportId: -1, bestAnyId: -1 };
+    if (isImportish && id > cur.bestImportId) {
+      cur.bestImportId = id;
+      cur.bestImportStage = stage;
+    }
+    if (id > cur.bestAnyId) {
+      cur.bestAnyId = id;
+      cur.bestAnyStage = stage;
+    }
+    byEpisode.set(epId, cur);
+  }
+
+  for (const [epId, agg] of byEpisode.entries()) {
+    const workItemId = `sonarr:episode:${epId}`;
+    const existing = getWorkItem(db, workItemId);
+    if (!existing) continue;
+
+    const chosen = agg.bestImportId >= 0 ? agg.bestImportStage : agg.bestAnyStage;
+    if (!chosen) continue;
+
+    upsertStage(db, workItemId, chosen);
+  }
+}
+
+function repairStagesFromRadarrHistoryWindow(db: Db, histRecords: any[]) {
+  type Agg = { bestImportId: number; bestImportStage?: Stage; bestAnyId: number; bestAnyStage?: Stage };
+  const byMovie = new Map<number, Agg>();
+
+  for (const r of histRecords) {
+    const id = Number(r.id);
+    if (!Number.isFinite(id)) continue;
+    const movieId = r.movieId;
+    if (!movieId) continue;
+
+    const et = String(r.eventType ?? "unknown");
+    const stage = stageForHistoryEventType(et);
+    if (!stage) continue;
+
+    const lower = et.toLowerCase();
+    const isImportish = lower.includes("import") || lower.includes("rename");
+
+    const cur = byMovie.get(movieId) ?? { bestImportId: -1, bestAnyId: -1 };
+    if (isImportish && id > cur.bestImportId) {
+      cur.bestImportId = id;
+      cur.bestImportStage = stage;
+    }
+    if (id > cur.bestAnyId) {
+      cur.bestAnyId = id;
+      cur.bestAnyStage = stage;
+    }
+    byMovie.set(movieId, cur);
+  }
+
+  for (const [movieId, agg] of byMovie.entries()) {
+    const workItemId = `radarr:movie:${movieId}`;
+    const existing = getWorkItem(db, workItemId);
+    if (!existing) continue;
+
+    const chosen = agg.bestImportId >= 0 ? agg.bestImportStage : agg.bestAnyStage;
+    if (!chosen) continue;
+
+    upsertStage(db, workItemId, chosen);
+  }
 }
 
 function shouldEmitHistory(db: Db, key: string, id: number) {
@@ -205,7 +297,12 @@ export async function pollSonarrQueue(db: Db, cfg: AppConfig) {
     const workItemId = ensureSonarrEpisodeWorkItem(db, r, epId);
     // Queue activity after a downloadFailed indicates a later retry is in flight / succeeded.
     clearFailedDownloadIfNeeded(db, workItemId, `sonarr.queue:${String(r.trackedDownloadState ?? r.status ?? "")}`);
-    upsertStage(db, workItemId, "downloading");
+    const existing = getWorkItem(db, workItemId);
+    const existingStage = existing?.stage as Stage | undefined;
+    // Don't let queue polling drag a completed import backwards to `downloading`.
+    if (!existingStage || stageOrderIndex(existingStage) < stageOrderIndex("imported")) {
+      upsertStage(db, workItemId, "downloading");
+    }
     appendEvent(db, workItemId, {
       ts: nowIso(),
       type: "sonarr.poll.queue",
@@ -252,6 +349,9 @@ export async function pollSonarrQueue(db: Db, cfg: AppConfig) {
       data: { id, eventType: et, downloadId: r.downloadId, sourceTitle: r.sourceTitle, data: r.data }
     });
   }
+  // Even if individual history rows are skipped by the watermark dedupe, we still want the
+  // latest stage implied by the current history window (prevents "stuck" stages after mapping fixes).
+  repairStagesFromSonarrHistoryWindow(db, histRecords);
   if (maxId) bumpHistoryWatermark(db, watermarkKey, maxId);
   markIntegrationOk(db, "sonarr");
 }
@@ -265,7 +365,11 @@ export async function pollRadarrQueue(db: Db, cfg: AppConfig) {
     const movieId = r.movieId ?? r.movie?.id;
     if (!movieId) continue;
     const workItemId = ensureRadarrMovieWorkItem(db, r, movieId);
-    upsertStage(db, workItemId, "downloading");
+    const existing = getWorkItem(db, workItemId);
+    const existingStage = existing?.stage as Stage | undefined;
+    if (!existingStage || stageOrderIndex(existingStage) < stageOrderIndex("imported")) {
+      upsertStage(db, workItemId, "downloading");
+    }
     appendEvent(db, workItemId, {
       ts: nowIso(),
       type: "radarr.poll.queue",
@@ -311,6 +415,7 @@ export async function pollRadarrQueue(db: Db, cfg: AppConfig) {
       data: { id, eventType: et, downloadId: r.downloadId, sourceTitle: r.sourceTitle, data: r.data }
     });
   }
+  repairStagesFromRadarrHistoryWindow(db, histRecords);
   if (maxId) bumpHistoryWatermark(db, watermarkKey, maxId);
   markIntegrationOk(db, "radarr");
 }
