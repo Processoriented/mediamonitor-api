@@ -203,7 +203,23 @@ export async function pollPullScript(db: Db, cfg: AppConfig) {
       continue;
     }
 
-    if (line.includes("ERROR rclone copy failed")) {
+    if (line.includes("INFO rclone copy OK")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.copy_ok");
+      const fp = fingerprint(["copy_ok", currentDownloadId, line]);
+      if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:copy_ok`, fp)) continue;
+      appendEvent(db, workItemId, {
+        ts: nowIso(),
+        type: "pull.rclone.copy_ok",
+        source: "pullscript",
+        severity: "info",
+        message: "rclone copy finished",
+        data: { downloadId: currentDownloadId, line }
+      });
+      continue;
+    }
+
+    // `sabnzbd_pull.py` logs: `ERROR rclone copy failed (rc=...): ...`
+    if (line.includes("rclone copy failed")) {
       const fp = fingerprint(["copy_failed", currentDownloadId, line]);
       if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:copy_failed`, fp)) continue;
       appendEvent(db, workItemId, {
@@ -218,18 +234,48 @@ export async function pollPullScript(db: Db, cfg: AppConfig) {
       continue;
     }
 
-    if (line.includes("rclone check")) {
-      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.check");
-      const fp = fingerprint(["check", currentDownloadId, line]);
-      if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:check`, fp)) continue;
+    if (line.includes("INFO rclone check:")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.check_started");
+      const fp = fingerprint(["check_invoked", currentDownloadId, line]);
+      if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:check_invoked`, fp)) continue;
       appendEvent(db, workItemId, {
         ts: nowIso(),
-        type: "pull.rclone.check",
+        type: "pull.rclone.check_started",
         source: "pullscript",
         severity: "info",
-        message: "rclone check",
+        message: "rclone check started",
         data: { downloadId: currentDownloadId, line }
       });
+      continue;
+    }
+
+    if (line.includes("rclone check OK")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.check_ok");
+      const fp = fingerprint(["check_ok", currentDownloadId, line]);
+      if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:check_ok`, fp)) continue;
+      appendEvent(db, workItemId, {
+        ts: nowIso(),
+        type: "pull.rclone.check_ok",
+        source: "pullscript",
+        severity: "info",
+        message: "rclone check passed",
+        data: { downloadId: currentDownloadId, line }
+      });
+      continue;
+    }
+
+    if (line.includes("rclone check failed")) {
+      const fp = fingerprint(["check_failed", currentDownloadId, line]);
+      if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:check_failed`, fp)) continue;
+      appendEvent(db, workItemId, {
+        ts: nowIso(),
+        type: "pull.rclone.check_failed",
+        source: "pullscript",
+        severity: "error",
+        message: "rclone check failed",
+        data: { downloadId: currentDownloadId, line }
+      });
+      setFailed(db, workItemId, "pull.rclone.check_failed");
       continue;
     }
   }
