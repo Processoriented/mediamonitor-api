@@ -23,6 +23,7 @@ services:
       TAUTULLI_API_KEY: "${TAUTULLI_API_KEY-}"
       SABNZBD_PULL_LOG_INGEST_PATH: "${SABNZBD_PULL_LOG_INGEST_PATH-/host/logs/sabnzbd_pull.log}"
       SABNZBD_PULL_STATE_INGEST_PATH: "${SABNZBD_PULL_STATE_INGEST_PATH-/host/state/sabnzbd_pull_state.json}"
+      PLEX_MEDIA_SCANNER_LOG_INGEST_PATH: "${PLEX_MEDIA_SCANNER_LOG_INGEST_PATH-/host/plex-logs}"
     volumes:
       - mediamonitor_data:/data
 

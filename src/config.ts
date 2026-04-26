@@ -31,6 +31,12 @@ const envSchema = z.object({
   SABNZBD_PULL_LOG_INGEST_PATH: z.string().default("/host/logs/sabnzbd_pull.log"),
   SABNZBD_PULL_STATE_INGEST_PATH: z.string().default("/host/state/sabnzbd_pull_state.json"),
 
+  // Plex host signal mounts (inside container)
+  // Can be either:
+  // - a directory containing Plex logs (recommended): /host/plex-logs
+  // - a specific file path: /host/plex-logs/Plex Media Scanner.log
+  PLEX_MEDIA_SCANNER_LOG_INGEST_PATH: z.string().default("/host/plex-logs"),
+
   POLL_INTERVAL_SECONDS: z.coerce.number().int().min(5).default(30)
 });
 

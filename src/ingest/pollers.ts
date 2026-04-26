@@ -8,6 +8,7 @@ import { pollTautulli } from "./pollers/tautulliPoller.js";
 import { pollSeerr } from "./pollers/seerrPoller.js";
 import { pollPullScript } from "./pollers/pullScriptPoller.js";
 import { pollStallEngine } from "./pollers/stallEnginePoller.js";
+import { pollPlexScanner } from "./pollers/plexScannerPoller.js";
 
 export type Poller = {
   name: string;
@@ -63,6 +64,12 @@ export function createPollers(db: Db): Poller[] {
     name: "stall_engine",
     runOnce: async () => {
       await pollStallEngine(db, cfg);
+    }
+  });
+  pollers.push({
+    name: "plex_scanner",
+    runOnce: async () => {
+      await pollPlexScanner(db, cfg);
     }
   });
 

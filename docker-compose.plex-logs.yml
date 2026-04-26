@@ -1,0 +1,8 @@
+services:
+  mediamonitor-api:
+    volumes:
+      # Optional Plex logs mount (read-only). Customize host path for your system.
+      # For a typical Linux install, this is under:
+      #   /var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Logs
+      - ${PLEX_LOGS_PATH:-/path/to/Plex Media Server/Logs}:/host/plex-logs:ro
+

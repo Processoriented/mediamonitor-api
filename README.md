@@ -44,6 +44,7 @@ These are read by `docker-compose.yml` / `docker-compose.host-signals.yml` (see 
 - **`WEBHOOK_SECRET`**: shared secret for `/webhooks/*` (recommended).
 - **`SABNZBD_PULL_LOG_PATH`**: host path to pull-script log (optional; used only with `docker-compose.host-signals.yml`).
 - **`SABNZBD_PULL_STATE_PATH`**: host path to pull-script state JSON (optional; used only with `docker-compose.host-signals.yml`).
+- **`PLEX_LOGS_PATH`**: host path to Plex Logs dir (optional; used only with `docker-compose.plex-logs.yml`).
 
 ### Application runtime (`src/config.ts`)
 
@@ -56,6 +57,7 @@ These are read by the Node process (set them in Compose `environment:` for Docke
 - **`LOG_LEVEL`**: logging verbosity (default `info`).
 - **`WEBHOOK_SECRET`**: enables webhook auth for `/webhooks/*` via `x-webhook-secret` **or** `?secret=` query param.
 - **`POLL_INTERVAL_SECONDS`**: background poller interval (default `30`, minimum `5`).
+- **`PLEX_MEDIA_SCANNER_LOG_INGEST_PATH`**: in-container path to Plex scanner log **directory** (recommended) or a specific log file (default `/host/plex-logs`).
 - **Integrations (optional today; used by pollers as they’re implemented)**:
   - **`SEERR_BASE_URL`**, **`SEERR_API_KEY`**
   - **`SONARR_BASE_URL`**, **`SONARR_API_KEY`**
@@ -76,6 +78,7 @@ The server periodically polls configured integrations (`POLL_INTERVAL_SECONDS`, 
 - **SABnzbd**: polls `mode=queue` and emits `sabnzbd.poll.queue` events when a job’s status changes (requires `downloadId` correlation from ARR webhooks).
 - **Seerr**: polls `GET /api/v1/status` with `X-Api-Key`.
 - **Tautulli**: polls `cmd=get_server_info`.
+- **Plex scanner**: tails `Plex Media Scanner.log` and uses scan activity completion signals to advance `plex_scanning` → `available` (requires mounting Plex logs; see below).
 
 `TAUTULLI_BASE_URL` should be the **web UI root** (scheme + host + port), e.g. `http://yourhost:8181` (optionally with a reverse-proxy subpath like `http://yourhost/tautulli`). The client will call `/api/v2` under that root.
 
@@ -134,4 +137,19 @@ If you want the container to read host log/state files, run with the additional 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.host-signals.yml up -d --build
 ```
+
+## Optional: mount Plex logs (for Plex scan detection)
+
+If you want the server to detect Plex library scans (stage `plex_scanning` → `available`), mount the Plex Logs directory read-only:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.plex-logs.yml up -d --build
+```
+
+Then set `PLEX_LOGS_PATH` in `.env` to your Plex logs folder (example on many Linux installs):
+
+- `/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Logs`
+
+By default, the container will read `PLEX_MEDIA_SCANNER_LOG_INGEST_PATH=/host/plex-logs` and automatically tail the newest `Plex Media Scanner*.log` file (handles rotation like `Plex Media Scanner.1.log`).
+
 
