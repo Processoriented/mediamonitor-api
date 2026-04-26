@@ -59,6 +59,41 @@ function setFailed(db: Db, workItemId: string, reason: string) {
   });
 }
 
+function clearFailedPullIfNeeded(db: Db, workItemId: string, because: string) {
+  const existing = getWorkItem(db, workItemId);
+  if (!existing) return;
+  if (existing.health !== "failed") return;
+
+  const reason = existing.stall_reason ?? "";
+  // Only auto-clear failures that came from the pull script itself.
+  if (!reason.startsWith("pull.")) return;
+
+  upsertWorkItem(db, {
+    id: existing.id,
+    type: existing.type,
+    title: existing.title,
+    year: existing.year,
+    season: existing.season,
+    episode: existing.episode,
+    stage: existing.stage,
+    health: "ok",
+    stalled_since: existing.stalled_since,
+    stall_reason: null,
+    expected_next_event: existing.expected_next_event
+  });
+
+  // Avoid spamming: only once per work item per observed "because".
+  if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:failed_cleared`, because)) return;
+  appendEvent(db, workItemId, {
+    ts: nowIso(),
+    type: "pull.failed_cleared",
+    source: "pullscript",
+    severity: "info",
+    message: "Cleared failed state after pull progress",
+    data: { because, previousReason: reason }
+  });
+}
+
 function parseDownloadId(line: string): string | undefined {
   const m = line.match(/\[(SABnzbd_nzo_[^\]]+)\]/);
   return m?.[1];
@@ -139,6 +174,7 @@ export async function pollPullScript(db: Db, cfg: AppConfig) {
     upsertStage(db, workItemId, "pulling");
 
     if (line.includes("INFO Processing")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.processing");
       const fp = fingerprint(["processing", currentDownloadId, line]);
       if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:processing`, fp)) continue;
       appendEvent(db, workItemId, {
@@ -153,6 +189,7 @@ export async function pollPullScript(db: Db, cfg: AppConfig) {
     }
 
     if (line.includes("INFO rclone copy:")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.copy_started");
       const fp = fingerprint(["copy_started", currentDownloadId, line]);
       if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:copy_started`, fp)) continue;
       appendEvent(db, workItemId, {
@@ -182,6 +219,7 @@ export async function pollPullScript(db: Db, cfg: AppConfig) {
     }
 
     if (line.includes("rclone check")) {
+      clearFailedPullIfNeeded(db, workItemId, "pull.rclone.check");
       const fp = fingerprint(["check", currentDownloadId, line]);
       if (!shouldEmitOnce(db, `pullscript:dedupe:${workItemId}:check`, fp)) continue;
       appendEvent(db, workItemId, {
